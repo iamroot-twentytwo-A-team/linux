@@ -137,12 +137,24 @@ SYM_CODE_START_LOCAL(record_mmu_state)
 	mrs	x19, sctlr_el1
 	b.ne	0f
 	mrs	x19, sctlr_el2
+	#mrs	x19,<- sctlr_el2
+	#msr	x19,-> sctlr_el2
 0:
 CPU_LE( tbnz	x19, #SCTLR_ELx_EE_SHIFT, 1f	)
+		// zero flag set (1or0)
 CPU_BE( tbz	x19, #SCTLR_ELx_EE_SHIFT, 1f	)
+	# --enter-- endian설정이 올바른 경우 실행되는 contexst
 	tst	x19, #SCTLR_ELx_C		// Z := (C == 0)
+		// - C 비트가 0: x19 & SCTLR_ELx_C = 0 → Z = 1 → EQ 조건 참
+		// - C 비트가 1: x19 & SCTLR_ELx_C ≠ 0 → Z = 0 → EQ 조건 거짓
 	and	x19, x19, #SCTLR_ELx_M		// isolate M bit
+		//    0x1111 1111 1111 1111 ... 1011
+		//    0x0000 0000 0000 0000 ... 0001  << SCTLR_ELx_M
+		//    ------------AND_--------------
+		//    0x0000 0000 0000 0000 ... 0001   to x19
 	csel	x19, xzr, x19, eq		// clear x19 if Z
+		//   D-cache가 비활성화되어 있으면 MMU 상태를 0으로 리셋하고, D-cache가 활성화되어 있으면 MMU Enable 비트를 그대로 반환
+
 	ret
 
 	/*
@@ -151,8 +163,11 @@ CPU_BE( tbz	x19, #SCTLR_ELx_EE_SHIFT, 1f	)
 	 * this means the MMU must be disabled, or the active ID map will end
 	 * up getting interpreted with the wrong byte order.
 	 */
-1:	eor	x19, x19, #SCTLR_ELx_EE
-	bic	x19, x19, #SCTLR_ELx_M
+	 // 엔디안 수정
+1:	eor	x19, x19, #SCTLR_ELx_EE  // 0b 0000 ... 1 ... 000
+		// bit change 다르면 1, 같으면 0
+	bic	x19, x19, #SCTLR_ELx_M  // 0b 0000 ... 0001
+		// x19에서 SCTLR_ELx_M의 bit를 0으로 clear해서 다시 x19로 save
 	b.ne	2f
 	pre_disable_mmu_workaround
 	msr	sctlr_el2, x19

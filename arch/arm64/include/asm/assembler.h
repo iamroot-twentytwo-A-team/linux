@@ -140,6 +140,7 @@ lr	.req	x30		// link register
 /*
  * Select code when configured for LE.
  */
+/* Endian kernel config */
 #ifdef CONFIG_CPU_BIG_ENDIAN
 #define CPU_LE(code...)
 #else

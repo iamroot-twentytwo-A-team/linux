@@ -822,6 +822,7 @@
 #define OP_CPP_RCTX			sys_insn(1, 3, 7, 3, 7)
 
 /* Common SCTLR_ELx flags. */
+/* ARM64 system control register define */
 #define SCTLR_ELx_ENTP2	(BIT(60))
 #define SCTLR_ELx_DSSBS	(BIT(44))
 #define SCTLR_ELx_ATA	(BIT(43))
@@ -845,8 +846,8 @@
 #define SCTLR_ELx_EOS	 (BIT(11))
 #define SCTLR_ELx_SA	 (BIT(3))
 #define SCTLR_ELx_C	 (BIT(2))
-#define SCTLR_ELx_A	 (BIT(1))
-#define SCTLR_ELx_M	 (BIT(0))
+#define SCTLR_ELx_A	 (BIT(1)) // 0b10
+#define SCTLR_ELx_M	 (BIT(0)) // 0b01
 
 /* SCTLR_EL2 specific flags. */
 #define SCTLR_EL2_RES1	((BIT(4))  | (BIT(5))  | (BIT(11)) | (BIT(16)) | \
