@@ -1,6 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+/* SPDX-License-Identifier: GPL-2.0-only */ //GPL-2.0-only (GNU General Public License 버전 2 전용) 라이선스를 따른다
 /*
- * Low-level CPU initialisation
+ * Low-level CPU initialisation //저수준 CPU 초기화를 위한 코드
  * Based on arch/arm/kernel/head.S
  *
  * Copyright (C) 1994-2002 Russell King
@@ -9,20 +9,58 @@
  *		Will Deacon <will.deacon@arm.com>
  */
 
-#include <linux/linkage.h>
-#include <linux/init.h>
-#include <linux/pgtable.h>
+#include <linux/linkage.h>              //커널 심볼의 연결(Linkage)과 관련된 매크로들을 정의
+                                        //커널 내부에서 모듈 간에 함수나 전역 변수를 어떻게 공유할 것인지를 설명
 
-#include <asm/asm_pointer_auth.h>
-#include <asm/assembler.h>
-#include <asm/boot.h>
-#include <asm/bug.h>
-#include <asm/ptrace.h>
-#include <asm/asm-offsets.h>
-#include <asm/cache.h>
-#include <asm/cputype.h>
-#include <asm/el2_setup.h>
-#include <asm/elf.h>
+#include <linux/init.h>                 // __init, __exit 등 초기화 관련 매크로
+
+#include <linux/pgtable.h>              // 일반적인 페이지 테이블 구조와 관련된 정의
+                                        /*페이지 테이블(page table)은 운영체제의 메모리 관리 시스템에서 사용하는 핵심 자료구조로, 
+                                        가상 주소(Virtual Address)를 실제 물리 주소(Physical Address)로 변환하기 위해 사용
+                                        운영체제는 프로그램마다 **자기만의 독립된 주소 공간(가상 주소)**을 줌.
+                                        그런데 실제 컴퓨터의 물리 메모리는 하나뿐임.
+                                        각 프로그램의 가상 주소를 실제 물리 주소로 변환해주는 번역 테이블이 필요하다*/
+
+#include <asm/asm_pointer_auth.h>       // ARMv8.3 이상에서의 포인터 인증
+					/* ARM 아키텍처에서 보안성을 강화하기 위해 도입된 기능으로, 프로그램의 포인터가 변조되지 않았는지 검증하는 기술
+					포인터에 디지털 서명을 해서, 나중에 사용할 때 진짜인지 확인하는 기능
+                                        현대 시스템에서 보안 공격 중 하나는 다음과 같습니다
+                                        :공격 시나리오:
+                                        해커가 함수 포인터나 리턴 주소(return address) 같은 중요한 포인터를 조작해서,
+                                        공격자가 원하는 악성 코드로 흐름을 바꾸는 ROP (Return-Oriented Programming) 같은 공격을 합니다.*/
+                                        /*이런 공격을 막기 위해 ARM은 **포인터 자체에 서명을 붙이는 방식
+                                        (PAC, Pointer Authentication Code)**을 도입했습니다
+                                        포인터 인증의 작동 원리
+                                        ARM CPU는 PAC라는 서명 값을 **포인터와 몇 가지 시스템 정보(예: SP, 키)**를 기반으로 생성해,
+                                        포인터 상위 비트에 저장합니다. (64비트 주소 공간 중 사용하지 않는 공간을 사용)
+                                        PAC 검증 (인증)
+                                        포인터를 사용할 때 ARM CPU가 PAC를 자동으로 검사해서,
+                                        유효하지 않은 경우 **fault (예외)**를 발생시킵니다.*/
+				
+#include <asm/assembler.h>              // 어셈블리 유틸리티 매크로 (레지스터 설정 등)
+#include <asm/boot.h>                   // 부트 시 사용되는 구조체 및 상수 정의
+#include <asm/bug.h>                    // BUG(), WARN() 등의 디버깅 헬퍼 매크로
+#include <asm/ptrace.h>                 // 트랩 및 예외 처리 시 CPU 상태 저장 구조체 (pt_regs 등)
+#include <asm/asm-offsets.h>            // 구조체의 오프셋 정의 (어셈블리-레벨에서 접근 가능하게 함)
+#include <asm/cache.h>                  // 캐시 라인 크기, 정렬 등 관련 정의
+#include <asm/cputype.h>                // CPU 타입 판별 (e.g. MIDR, 구현자 ID)
+#include <asm/el2_setup.h>              // EL2(하이퍼바이저 레벨) 설정, KVM 관련
+                                        /*ARMv8-A (AArch64) 아키텍처에는 4단계의 권한 레벨이 있습니다:
+                                          Exception Level	설명	                        사용 주체
+                                          EL0	              사용자 모드	                일반 애플리케이션
+                                          EL1	              커널 모드	                        리눅스 커널
+                                          EL2	              하이퍼바이저 모드	                KVM, Xen 등 가상화 계층
+                                          EL3	              시큐어 모드 (Secure Monitor)	트러스트존 같은 보안 펌웨어
+                                          현대 시스템에서는 가상화를 통해 하나의 물리 머신에서 여러 개의 **가상 머신(VM)**을 실행할 수 있습니다.
+                                          이를 위해 중간에 하이퍼바이저(Hypervisor) 가 필요합니다.
+                                          EL2는 이 하이퍼바이저가 동작하는 전용 권한 레벨입니다.
+                                          ARM에서는 KVM이 커널 모듈 형태로 동작하며, EL2를 사용합니다.
+                                          KVM (Kernel-based Virtual Machine) 은 리눅스 커널에 내장된 가상화 기술입니다.
+                                          x86에서는 VT-x를 사용하고,
+                                          ARM에서는 EL2를 이용해 게스트 OS를 EL1에서 돌릴 수 있도록 하이퍼바이저를 실행합니다.*/
+                                        
+#include <asm/elf.h>                     //// ELF 로딩 및 실행 포맷 관련 정의
+
 #include <asm/image.h>
 #include <asm/kernel-pgtable.h>
 #include <asm/kvm_arm.h>
