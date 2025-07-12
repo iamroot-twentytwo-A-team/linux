@@ -169,11 +169,14 @@ CPU_BE( tbz	x19, #SCTLR_ELx_EE_SHIFT, 1f	)
 	bic	x19, x19, #SCTLR_ELx_M  // 0b 0000 ... 0001
 		// x19에서 SCTLR_ELx_M의 bit를 0으로 clear해서 다시 x19로 save
 	b.ne	2f
+	//EL2
 	pre_disable_mmu_workaround
 	msr	sctlr_el2, x19
 	b	3f
+	//EL1
 2:	pre_disable_mmu_workaround
 	msr	sctlr_el1, x19
+
 3:	isb
 	mov	x19, xzr
 	ret
@@ -189,12 +192,20 @@ SYM_CODE_START_LOCAL(preserve_boot_args)
 	stp	x21, x1, [x0]			// x0 .. x3 at kernel entry
 	stp	x2, x3, [x0, #16]
 
+	// mmu record에서 D-ccache가 꺼져있으면 x19는 '0'으로 셋팅되어져서 옴.
+	// compare branch non-zero --> x19가 0이 아니면 0f로 브랜치
 	cbnz	x19, 0f				// skip cache invalidation if MMU is on
+	// Case: D-cache Off
+	// ARM write buffer로 인해 store의 순서를 보장할 수 없고, 
+	// 이 케이스에서는 0x0~0x3을 boot_args에 store한 후 dcache inval 하기 위해 dmb sy를 실행
+	// ordering을 보장할 수 없기 때문에 dmb sy를 사용
 	dmb	sy				// needed before dc ivac with
 						// MMU off
 
 	add	x1, x0, #0x20			// 4 x 8 bytes
 	b	dcache_inval_poc		// tail call
+
+	// mmu enabled == d-cache ON 
 0:	str_l   x19, mmu_enabled_at_boot, x0
 	ret
 SYM_CODE_END(preserve_boot_args)
